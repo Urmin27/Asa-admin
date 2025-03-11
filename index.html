@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Interface Admin - Asa En Ligne</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f2f2f2;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 20px auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    h2 { text-align: center; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: center;
+    }
+    th { background: #28a745; color: #fff; }
+    button {
+      padding: 5px 10px;
+      background: #28a745;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 2px;
+    }
+    button:hover { background: #218838; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Interface Admin - Demandes de Paiement</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Nom Utilisateur</th>
+          <th>Numéro de téléphone</th>
+          <th>Montant</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="admin-table-body">
+        <!-- Les demandes de paiement s'afficheront ici -->
+      </tbody>
+    </table>
+    <button onclick="loadAdminRequests()">Rafraîchir</button>
+  </div>
+
+  <!-- Importation des modules Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.3.1/firebase-app.js";
+    import { 
+      getFirestore, 
+      collection, 
+      getDocs, 
+      updateDoc, 
+      deleteDoc, 
+      doc 
+    } from "https://www.gstatic.com/firebasejs/11.3.1/firebase-firestore.js";
+
+    // Configuration Firebase (mifandray amin'ny même projet)
+    const firebaseConfig = {
+      apiKey: "AIzaSyCK4HqGSjYRT2jFNhAvniSWIzhDvEb2qAQ",
+      authDomain: "asa-en-ligne.firebaseapp.com",
+      projectId: "asa-en-ligne",
+      storageBucket: "asa-en-ligne.appspot.com",
+      messagingSenderId: "58359363245",
+      appId: "1:58359363245:web:ca5969776ce9cd86aef824",
+      measurementId: "G-MRVHVWPV71"
+    };
+
+    // Initialisation Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // Charger et afficher les demandes de paiement en attente
+    async function loadAdminRequests() {
+      const tableBody = document.getElementById("admin-table-body");
+      tableBody.innerHTML = "";
+      const querySnapshot = await getDocs(collection(db, "paymentRequests"));
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if(data.status === "pending") {
+          tableBody.innerHTML += `
+            <tr>
+              <td>${data.fullName}</td>
+              <td>${data.phone}</td>
+              <td>${data.amount}</td>
+              <td>
+                <button onclick="confirmPayment('${docSnap.id}', '${data.userId}')">Confirmer</button>
+                <button onclick="cancelPayment('${docSnap.id}', '${data.userId}')">Annuler</button>
+              </td>
+            </tr>
+          `;
+        }
+      });
+    }
+
+    // Fonction pour confirmer une demande de paiement
+    window.confirmPayment = async function(requestId, userId) {
+      try {
+        // Mettre à jour la demande de paiement
+        const requestRef = doc(db, "paymentRequests", requestId);
+        await updateDoc(requestRef, { status: "confirmed" });
+        // Générer un code d'activation à 4 chiffres
+        const activationCode = String(Math.floor(1000 + Math.random() * 9000));
+        // Mettre à jour le compte de l'utilisateur
+        const userRef = doc(db, "users", userId);
+        await updateDoc(userRef, { activationCode: activationCode, paymentStatus: "confirmed" });
+        alert("Paiement confirmé et code d'activation envoyé.");
+        loadAdminRequests();
+      } catch (error) {
+        alert("Erreur lors de la confirmation : " + error.message);
+      }
+    };
+
+    // Fonction pour annuler une demande de paiement
+    window.cancelPayment = async function(requestId, userId) {
+      try {
+        const requestRef = doc(db, "paymentRequests", requestId);
+        await deleteDoc(requestRef);
+        // Réinitialiser l'état de paiement de l'utilisateur
+        const userRef = doc(db, "users", userId);
+        await updateDoc(userRef, { paymentStatus: "not_paid" });
+        alert("Demande annulée.");
+        loadAdminRequests();
+      } catch (error) {
+        alert("Erreur lors de l'annulation : " + error.message);
+      }
+    };
+
+    // Charger initialement les demandes de paiement
+    loadAdminRequests();
+  </script>
+</body>
+</html>
