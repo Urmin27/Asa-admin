@@ -12,7 +12,7 @@
       padding: 20px;
     }
     .container {
-      max-width: 800px;
+      max-width: 900px;
       margin: 20px auto;
       background: #fff;
       padding: 20px;
@@ -27,7 +27,7 @@
     }
     th, td {
       border: 1px solid #ddd;
-      padding: 8px;
+      padding: 10px;
       text-align: center;
     }
     th { background: #28a745; color: #fff; }
@@ -41,11 +41,15 @@
       margin: 2px;
     }
     button:hover { background: #218838; }
+    .refresh {
+      margin-top: 10px;
+      background: #007bff;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>Interface Admin - Demandes de Paiement</h2>
+    <h2>Interface Admin - Demandes de Paiement en Attente</h2>
     <table>
       <thead>
         <tr>
@@ -55,23 +59,42 @@
           <th>Actions</th>
         </tr>
       </thead>
-      <tbody id="admin-table-body">
-        <!-- Les demandes de paiement s'afficheront ici -->
+      <tbody id="pending-table-body">
+        <!-- Les demandes en attente s'afficheront ici -->
       </tbody>
     </table>
-    <button onclick="loadAdminRequests()">Rafraîchir</button>
+    <button class="refresh" onclick="loadPendingRequests()">Rafraîchir la liste des demandes</button>
+  </div>
+
+  <div class="container">
+    <h2>Liste des Comptes Confirmés</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Nom Utilisateur</th>
+          <th>Contrat Expire le</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="confirmed-table-body">
+        <!-- Les comptes confirmés s'afficheront ici -->
+      </tbody>
+    </table>
+    <button class="refresh" onclick="loadConfirmedUsers()">Rafraîchir la liste des comptes</button>
   </div>
 
   <!-- Importation des modules Firebase -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.3.1/firebase-app.js";
-    import { 
-      getFirestore, 
-      collection, 
-      getDocs, 
-      updateDoc, 
-      deleteDoc, 
-      doc 
+    import {
+      getFirestore,
+      collection,
+      getDocs,
+      updateDoc,
+      deleteDoc,
+      doc
     } from "https://www.gstatic.com/firebasejs/11.3.1/firebase-firestore.js";
 
     // Configuration Firebase (mifandray amin'ny même projet)
@@ -85,13 +108,12 @@
       measurementId: "G-MRVHVWPV71"
     };
 
-    // Initialisation Firebase
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // Charger et afficher les demandes de paiement en attente
-    async function loadAdminRequests() {
-      const tableBody = document.getElementById("admin-table-body");
+    // Fonction: Charger les demandes de paiement en attente
+    async function loadPendingRequests() {
+      const tableBody = document.getElementById("pending-table-body");
       tableBody.innerHTML = "";
       const querySnapshot = await getDocs(collection(db, "paymentRequests"));
       querySnapshot.forEach((docSnap) => {
@@ -103,7 +125,7 @@
               <td>${data.phone}</td>
               <td>${data.amount}</td>
               <td>
-                <button onclick="confirmPayment('${docSnap.id}', '${data.userId}')">Confirmer</button>
+                <button onclick="confirmPayment('${docSnap.id}', '${data.userId}', '${data.amount}')">Confirmer</button>
                 <button onclick="cancelPayment('${docSnap.id}', '${data.userId}')">Annuler</button>
               </td>
             </tr>
@@ -112,41 +134,98 @@
       });
     }
 
-    // Fonction pour confirmer une demande de paiement
-    window.confirmPayment = async function(requestId, userId) {
+    // Fonction: Confirmer une demande de paiement
+    window.confirmPayment = async function(requestId, userId, amount) {
       try {
+        const numericAmount = parseFloat(amount);
+        const monthsToAdd = numericAmount / 1000; // 1000Ar = 1 mois, 2000Ar = 2 mois, etc.
+        let expiryDate = new Date();
+        expiryDate.setMonth(expiryDate.getMonth() + monthsToAdd);
+        const activationCode = String(Math.floor(1000 + Math.random() * 9000));
+        // Mettre à jour le compte utilisateur avec activationCode, paymentStatus et contractExpiry
+        const userRef = doc(db, "users", userId);
+        await updateDoc(userRef, {
+          activationCode: activationCode,
+          paymentStatus: "confirmed",
+          contractExpiry: expiryDate
+        });
         // Mettre à jour la demande de paiement
         const requestRef = doc(db, "paymentRequests", requestId);
         await updateDoc(requestRef, { status: "confirmed" });
-        // Générer un code d'activation à 4 chiffres
-        const activationCode = String(Math.floor(1000 + Math.random() * 9000));
-        // Mettre à jour le compte de l'utilisateur
-        const userRef = doc(db, "users", userId);
-        await updateDoc(userRef, { activationCode: activationCode, paymentStatus: "confirmed" });
-        alert("Paiement confirmé et code d'activation envoyé.");
-        loadAdminRequests();
+        alert("Paiement confirmé.\nCode d'activation: " + activationCode + "\nContrat actif jusqu'au " + expiryDate.toLocaleDateString());
+        loadPendingRequests();
+        loadConfirmedUsers();
       } catch (error) {
         alert("Erreur lors de la confirmation : " + error.message);
       }
     };
 
-    // Fonction pour annuler une demande de paiement
+    // Fonction: Annuler une demande de paiement
     window.cancelPayment = async function(requestId, userId) {
       try {
         const requestRef = doc(db, "paymentRequests", requestId);
         await deleteDoc(requestRef);
-        // Réinitialiser l'état de paiement de l'utilisateur
         const userRef = doc(db, "users", userId);
         await updateDoc(userRef, { paymentStatus: "not_paid" });
         alert("Demande annulée.");
-        loadAdminRequests();
+        loadPendingRequests();
+        loadConfirmedUsers();
       } catch (error) {
         alert("Erreur lors de l'annulation : " + error.message);
       }
     };
 
-    // Charger initialement les demandes de paiement
-    loadAdminRequests();
+    // Fonction: Charger la liste des comptes confirmés
+    async function loadConfirmedUsers() {
+      const tableBody = document.getElementById("confirmed-table-body");
+      tableBody.innerHTML = "";
+      const querySnapshot = await getDocs(collection(db, "users"));
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if(data.paymentStatus === "confirmed" && data.activationCode) {
+          // Convertir le Timestamp Firestore en Date
+          const expiryDate = data.contractExpiry ? data.contractExpiry.toDate() : null;
+          const now = new Date();
+          let status = "Actif";
+          let actionButton = "";
+          if(expiryDate && now > expiryDate) {
+            status = "Désactivé";
+            actionButton = `<button onclick="reactivateAccount('${docSnap.id}')">Réactiver</button>`;
+          }
+          tableBody.innerHTML += `
+            <tr>
+              <td>${data.email || "N/A"}</td>
+              <td>${data.fullName}</td>
+              <td>${expiryDate ? expiryDate.toLocaleDateString() : "N/A"}</td>
+              <td>${status}</td>
+              <td>${actionButton}</td>
+            </tr>
+          `;
+        }
+      });
+    }
+
+    // Fonction: Réactiver un compte expiré
+    window.reactivateAccount = async function(userId) {
+      const newAmount = prompt("Entrez le montant payé pour réactiver (ex: 1000, 2000, etc.):");
+      if(!newAmount) return;
+      const numericAmount = parseFloat(newAmount);
+      if(isNaN(numericAmount)) {
+        alert("Montant invalide.");
+        return;
+      }
+      const monthsToAdd = numericAmount / 1000;
+      let newExpiry = new Date();
+      newExpiry.setMonth(newExpiry.getMonth() + monthsToAdd);
+      const userRef = doc(db, "users", userId);
+      await updateDoc(userRef, { contractExpiry: newExpiry, paymentStatus: "confirmed" });
+      alert("Compte réactivé jusqu'au " + newExpiry.toLocaleDateString());
+      loadConfirmedUsers();
+    };
+
+    // Chargement initial
+    loadPendingRequests();
+    loadConfirmedUsers();
   </script>
 </body>
 </html>
